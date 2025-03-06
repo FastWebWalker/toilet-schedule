@@ -19,6 +19,12 @@ import {
   MenuItem,
   Chip,
 } from "@mui/material";
+import { toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+
+// Щоб toast працювали, треба додати <ToastContainer /> у твій кореневий компонент (наприклад App.js)
+// import { ToastContainer } from "react-toastify";
+// <ToastContainer position="top-right" autoClose={3000} />
 
 const getStatus = (startDateTime, duration) => {
   const now = new Date();
@@ -45,15 +51,18 @@ export default function ToiletSchedule() {
   const [name, setName] = useState("");
   const [duration, setDuration] = useState("");
   const [startTime, setStartTime] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [type, setType] = useState("Туалет");
   const [schedule, setSchedule] = useState([]);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "schedule"), (snapshot) => {
-      const items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      const items = snapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .sort((a, b) => new Date(a.startDateTime) - new Date(b.startDateTime));
+
       setSchedule(items);
 
+      // Автоматично видаляємо "вичерпані" тікети
       items.forEach(async (item) => {
         const status = getStatus(item.startDateTime, item.duration);
         if (status === "вичерпаний") {
@@ -65,19 +74,51 @@ export default function ToiletSchedule() {
   }, []);
 
   const handleAdd = async () => {
-    if (!name || !duration || !startTime || Number(duration) > 25) return;
-    const selectedDate = new Date(startTime);
+    if (!name || !duration || !startTime || Number(duration) > 25) {
+      return;
+    }
+
+    // Перевірка на перетин часу ТІЛЬКИ ДЛЯ ОДНАКОВОГО ТИПУ
+    const newStart = new Date(startTime);
+    const newEnd = new Date(newStart.getTime() + Number(duration) * 60000);
+
+    const conflict = schedule.some((item) => {
+      if (item.type !== type) return false; // Якщо типи різні, не перевіряти
+      const existingStart = new Date(item.startDateTime);
+      const existingEnd = new Date(
+        existingStart.getTime() + Number(item.duration) * 60000
+      );
+
+      // Перевіряємо перетин
+      return newStart < existingEnd && newEnd > existingStart;
+    });
+
+    if (conflict) {
+      toast.error("Цей час вже заброньований для обраного типу!", {
+        position: "top-right",
+        autoClose: 3000,
+      });
+      return;
+    }
+
+    // Додаємо новий тікет
     await addDoc(collection(db, "schedule"), {
       name,
       duration: Number(duration),
-      startTime: startTime,
+      startTime,
       type,
       startDateTime: startTime,
     });
+
     setName("");
     setDuration("");
     setStartTime("");
     setType("Туалет");
+
+    toast.success("Тікет успішно створено!", {
+      position: "top-right",
+      autoClose: 3000,
+    });
   };
 
   return (
