@@ -18,13 +18,11 @@ import {
   Box,
   MenuItem,
   Chip,
+  Tabs,
+  Tab,
 } from "@mui/material";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-
-// Щоб toast працювали, треба додати <ToastContainer /> у твій кореневий компонент (наприклад App.js)
-// import { ToastContainer } from "react-toastify";
-// <ToastContainer position="top-right" autoClose={3000} />
 
 const getStatus = (startDateTime, duration) => {
   const now = new Date();
@@ -53,6 +51,7 @@ export default function ToiletSchedule() {
   const [startTime, setStartTime] = useState("");
   const [type, setType] = useState("Туалет");
   const [schedule, setSchedule] = useState([]);
+  const [tab, setTab] = useState(0);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "schedule"), (snapshot) => {
@@ -62,7 +61,6 @@ export default function ToiletSchedule() {
 
       setSchedule(items);
 
-      // Автоматично видаляємо "вичерпані" тікети
       items.forEach(async (item) => {
         const status = getStatus(item.startDateTime, item.duration);
         if (status === "вичерпаний") {
@@ -78,18 +76,25 @@ export default function ToiletSchedule() {
       return;
     }
 
-    // Перевірка на перетин часу ТІЛЬКИ ДЛЯ ОДНАКОВОГО ТИПУ
     const newStart = new Date(startTime);
     const newEnd = new Date(newStart.getTime() + Number(duration) * 60000);
+    const maxDate = new Date();
+    maxDate.setDate(maxDate.getDate() + 3);
+
+    if (newStart > maxDate) {
+      toast.error("Можна бронювати максимум на 3 дні вперед!", {
+        position: "top-right",
+        autoClose: 3000,
+      });
+      return;
+    }
 
     const conflict = schedule.some((item) => {
-      if (item.type !== type) return false; // Якщо типи різні, не перевіряти
+      if (item.type !== type) return false;
       const existingStart = new Date(item.startDateTime);
       const existingEnd = new Date(
         existingStart.getTime() + Number(item.duration) * 60000
       );
-
-      // Перевіряємо перетин
       return newStart < existingEnd && newEnd > existingStart;
     });
 
@@ -101,7 +106,6 @@ export default function ToiletSchedule() {
       return;
     }
 
-    // Додаємо новий тікет
     await addDoc(collection(db, "schedule"), {
       name,
       duration: Number(duration),
@@ -122,16 +126,7 @@ export default function ToiletSchedule() {
   };
 
   return (
-    <Container
-      maxWidth="md"
-      sx={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        alignItems: "center",
-        py: 4,
-      }}>
+    <Container maxWidth="md" sx={{ minHeight: "100vh", py: 4 }}>
       <motion.div
         initial={{ scale: 0.8, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -185,7 +180,10 @@ export default function ToiletSchedule() {
           </Box>
         </Card>
       </motion.div>
-
+      <Tabs value={tab} onChange={(e, newTab) => setTab(newTab)} centered>
+        <Tab label="🚽 Туалет" />
+        <Tab label="🛁 Ванна" />
+      </Tabs>
       <Box
         sx={{
           width: "100%",
@@ -193,40 +191,47 @@ export default function ToiletSchedule() {
           flexDirection: "column",
           gap: 2,
         }}>
-        {schedule.map((item) => {
-          const status = getStatus(item.startDateTime, item.duration);
-          return (
-            <motion.div
-              key={item.id}
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}>
-              <Card
-                elevation={4}
-                sx={{ p: 3, borderRadius: 3, backgroundColor: "#fff7e6" }}>
-                <CardContent>
-                  <Typography variant="h6" color="secondary" fontWeight="bold">
-                    👤 {item.name} ({item.type})
-                    <Chip
-                      label={status}
-                      color={getStatusColor(status)}
-                      sx={{ ml: 2 }}
-                    />
-                  </Typography>
-                  <Typography variant="body1" sx={{ mt: 1 }}>
-                    🕒 Початок:{" "}
-                    <strong>
-                      {new Date(item.startDateTime).toLocaleString()}
-                    </strong>
-                  </Typography>
-                  <Typography variant="body1">
-                    ⏳ Тривалість: <strong>{item.duration} хв</strong>
-                  </Typography>
-                </CardContent>
-              </Card>
-            </motion.div>
-          );
-        })}
+        {schedule
+          .filter((item) =>
+            tab === 0 ? item.type === "Туалет" : item.type === "Ванна"
+          )
+          .map((item) => {
+            const status = getStatus(item.startDateTime, item.duration);
+            return (
+              <motion.div
+                key={item.id}
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5 }}>
+                <Card
+                  elevation={4}
+                  sx={{ p: 3, borderRadius: 3, backgroundColor: "#fff7e6" }}>
+                  <CardContent>
+                    <Typography
+                      variant="h6"
+                      color="secondary"
+                      fontWeight="bold">
+                      👤 {item.name} ({item.type})
+                      <Chip
+                        label={status}
+                        color={getStatusColor(status)}
+                        sx={{ ml: 2 }}
+                      />
+                    </Typography>
+                    <Typography variant="body1" sx={{ mt: 1 }}>
+                      🕒 Початок:{" "}
+                      <strong>
+                        {new Date(item.startDateTime).toLocaleString()}
+                      </strong>
+                    </Typography>
+                    <Typography variant="body1">
+                      ⏳ Тривалість: <strong>{item.duration} хв</strong>
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            );
+          })}
       </Box>
     </Container>
   );
